@@ -286,8 +286,6 @@ class PythonScript(Script, Historical, Cacheable):
             '_write_',
             '_getitem_',
             '_getiter_',
-            'container',
-            'context',
         ]
         for key in required:
             new_globals[key] = safe_globals[key]
