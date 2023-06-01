@@ -69,7 +69,7 @@ _marker = []  # Create a new marker object
 
 
 def manage_addPythonScript(self, id, title='', file=None, REQUEST=None,
-                           submit=None):
+                           submit=None, unrestricted=None):
     """Add a Python script to a folder.
     """
     id = str(id)
@@ -130,6 +130,7 @@ class PythonScript(Script, Historical, Cacheable):
                 '%s.'
                 'Please choose another name.' % ', '.join(bind_names))
         self.id = id
+        self._unrestricted = None
         self._makeFunction()
 
     security = ClassSecurityInfo()
@@ -146,7 +147,8 @@ class PythonScript(Script, Historical, Cacheable):
     ZPythonScriptHTML_editForm._setName('ZPythonScriptHTML_editForm')
 
     @security.protected(change_python_scripts)
-    def ZPythonScriptHTML_editAction(self, REQUEST, title, params, body):
+    def ZPythonScriptHTML_editAction(
+            self, REQUEST, title, params, body, unrestricted=False):
         """Change the script's main parameters."""
         self.ZPythonScript_setTitle(title)
         self.ZPythonScript_edit(params, body)
@@ -162,14 +164,22 @@ class PythonScript(Script, Historical, Cacheable):
             self.ZCacheable_invalidate()
 
     @security.protected(change_python_scripts)
-    def ZPythonScript_edit(self, params, body):
+    def ZPythonScript_edit(self, params, body, unrestricted=False):
         self._validateProxy()
         if self.wl_isLocked():
             raise ResourceLockedError('The script is locked via WebDAV.')
         if not isinstance(body, str):
             body = body.read()
 
-        if self._params != params or self._body != body or self._v_change:
+        changed = any([
+            self._params != params,
+            self._body != body,
+            self._unrestricted != unrestricted,
+            self._v_change]
+        )
+
+        if changed:
+            self._unrestricted = unrestricted
             self._params = str(params)
             self.write(body)
 
@@ -263,8 +273,28 @@ class PythonScript(Script, Historical, Cacheable):
         self.Script_magic = Script_magic
         self._v_change = 0
 
-    def _newfun(self, code):
+    def _get_globals(self):
+        if not self.unrestricted:
+            return get_safe_globals()
+
         safe_globals = get_safe_globals()
+        new_globals = globals()
+
+        required = [
+            '_getattr_',
+            '_print_',
+            '_write_',
+            '_getitem_',
+            '_getiter_',
+            'container',
+            'context',
+        ]
+        for key in required:
+            new_globals[key] = safe_globals[key]
+        return new_globals
+
+    def _newfun(self, code):
+        safe_globals = self._get_globals()
         safe_globals['_getattr_'] = guarded_getattr
         safe_globals['__debug__'] = __debug__
         # it doesn't really matter what __name__ is, *but*
@@ -487,6 +517,7 @@ class PythonScript(Script, Historical, Cacheable):
         m = {
             'title': self.title,
             'parameters': self._params,
+            'unrestricted': self._unrestricted
         }
         bindmap = self.getBindingAssignments().getAssignedNames()
         for k, v in _nice_bind_names.items():
@@ -532,6 +563,10 @@ class PythonScript(Script, Historical, Cacheable):
     def body(self):
         return self._body
 
+    @security.protected(view_management_screens)
+    def unrestricted(self):
+        return self._unrestricted
+
     def get_size(self):
         return len(self.read())
 
@@ -556,6 +591,7 @@ InitializeClass(PythonScript)
 
 class PythonScriptTracebackSupplement:
     """Implementation of ITracebackSupplement"""
+
     def __init__(self, script, line=0):
         self.object = script
         # If line is set to -1, it means to use tb_lineno.
