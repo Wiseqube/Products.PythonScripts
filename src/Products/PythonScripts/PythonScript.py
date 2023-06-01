@@ -281,7 +281,7 @@ class PythonScript(Script, Historical, Cacheable):
         new_globals = globals()
 
         required = [
-            '_getattr_',
+            'getattr',
             '_print_',
             '_write_',
             '_getitem_',
