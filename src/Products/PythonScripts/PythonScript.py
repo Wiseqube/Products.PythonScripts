@@ -274,14 +274,14 @@ class PythonScript(Script, Historical, Cacheable):
         self._v_change = 0
 
     def _get_globals(self):
-        if not self.unrestricted:
-            return get_safe_globals()
-
         safe_globals = get_safe_globals()
-        new_globals = globals()
+        safe_globals['_getattr_'] = guarded_getattr
+        if not self.unrestricted:
+            return safe_globals
 
+        new_globals = globals()
         required = [
-            'getattr',
+            '_getattr_',
             '_print_',
             '_write_',
             '_getitem_',
@@ -295,7 +295,6 @@ class PythonScript(Script, Historical, Cacheable):
 
     def _newfun(self, code):
         safe_globals = self._get_globals()
-        safe_globals['_getattr_'] = guarded_getattr
         safe_globals['__debug__'] = __debug__
         # it doesn't really matter what __name__ is, *but*
         # - we need a __name__
