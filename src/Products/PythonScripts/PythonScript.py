@@ -42,6 +42,7 @@ from OFS.History import Historical
 from OFS.History import html_diff
 from OFS.SimpleItem import SimpleItem
 from RestrictedPython import compile_restricted_function
+from RestrictedPython.transformer import RestrictingNodeTransformer
 from Shared.DC.Scripts.Script import BindingsUI
 from Shared.DC.Scripts.Script import Script
 from Shared.DC.Scripts.Script import defaultBindings
@@ -151,7 +152,7 @@ class PythonScript(Script, Historical, Cacheable):
             self, REQUEST, title, params, body, unrestricted=False):
         """Change the script's main parameters."""
         self.ZPythonScript_setTitle(title)
-        self.ZPythonScript_edit(params, body)
+        self.ZPythonScript_edit(params, body, unrestricted)
         message = 'Saved changes.'
         return self.ZPythonScriptHTML_editForm(self, REQUEST,
                                                manage_tabs_message=message)
@@ -174,7 +175,7 @@ class PythonScript(Script, Historical, Cacheable):
         changed = any([
             self._params != params,
             self._body != body,
-            self._unrestricted != unrestricted,
+            getattr(self, '_unrestricted', False) != unrestricted,
             self._v_change]
         )
 
@@ -240,12 +241,18 @@ class PythonScript(Script, Historical, Cacheable):
 
     def _compile(self):
         bind_names = self.getBindingAssignments().getAssignedNamesInOrder()
+        policy = RestrictingNodeTransformer
+        if getattr(self, '_unrestricted', False):
+            policy = None
+
         compile_result = compile_restricted_function(
             self._params,
             body=self._body or 'pass',
             name=self.id,
             filename=self.meta_type,
-            globalize=bind_names)
+            globalize=bind_names,
+            policy=policy,
+        )
 
         code = compile_result.code
         errors = compile_result.errors
@@ -276,19 +283,26 @@ class PythonScript(Script, Historical, Cacheable):
     def _get_globals(self):
         safe_globals = get_safe_globals()
         safe_globals['_getattr_'] = guarded_getattr
-        if not self.unrestricted:
+        if not getattr(self, '_unrestricted', False):
             return safe_globals
-
         new_globals = globals()
-        required = [
+        required_globals = [
             '_getattr_',
             '_print_',
             '_write_',
             '_getitem_',
             '_getiter_',
+            '_apply_',
+            '_inplacevar_',
         ]
-        for key in required:
+        for key in required_globals:
             new_globals[key] = safe_globals[key]
+        required_builtins = [
+            'DateTime'
+        ]
+        for key in required_builtins:
+            new_globals['__builtins__'][key] = safe_globals['__builtins__'][key]
+
         return new_globals
 
     def _newfun(self, code):
@@ -514,7 +528,6 @@ class PythonScript(Script, Historical, Cacheable):
         m = {
             'title': self.title,
             'parameters': self._params,
-            'unrestricted': self._unrestricted
         }
         bindmap = self.getBindingAssignments().getAssignedNames()
         for k, v in _nice_bind_names.items():
@@ -562,7 +575,7 @@ class PythonScript(Script, Historical, Cacheable):
 
     @security.protected(view_management_screens)
     def unrestricted(self):
-        return self._unrestricted
+        return getattr(self, '_unrestricted', False)
 
     def get_size(self):
         return len(self.read())
