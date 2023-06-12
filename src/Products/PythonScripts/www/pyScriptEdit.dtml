@@ -22,7 +22,7 @@
 			<div class="form-group row ">
 				<label for="params" class="form-label col-sm-3 col-md-2">Unrestricted</label>
 				<div class="col-sm-9 col-md-10">
-					<input id="params" class="form-control code" type="checkbox" name="unrestricted" value="&dtml-unrestricted;" />
+					<input id="params" class="form-control code" type="checkbox" name="unrestricted" value="1" <dtml-if unrestricted>checked</dtml-if> />
 				</div>
 			</div>
 		</dtml-with>
