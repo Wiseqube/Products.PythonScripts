@@ -43,6 +43,7 @@ from OFS.History import html_diff
 from OFS.SimpleItem import SimpleItem
 from RestrictedPython import compile_restricted_function
 from RestrictedPython.transformer import RestrictingNodeTransformer
+from .transformer import UnrestrictedNodeTransformer
 from Shared.DC.Scripts.Script import BindingsUI
 from Shared.DC.Scripts.Script import Script
 from Shared.DC.Scripts.Script import defaultBindings
@@ -243,7 +244,7 @@ class PythonScript(Script, Historical, Cacheable):
         bind_names = self.getBindingAssignments().getAssignedNamesInOrder()
         policy = RestrictingNodeTransformer
         if getattr(self, '_unrestricted', False):
-            policy = None
+            policy = UnrestrictedNodeTransformer
 
         compile_result = compile_restricted_function(
             self._params,
