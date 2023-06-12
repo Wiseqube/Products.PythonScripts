@@ -528,6 +528,7 @@ class PythonScript(Script, Historical, Cacheable):
         m = {
             'title': self.title,
             'parameters': self._params,
+            'unrestricted': self.unrestricted,
         }
         bindmap = self.getBindingAssignments().getAssignedNames()
         for k, v in _nice_bind_names.items():
