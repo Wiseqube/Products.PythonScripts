@@ -14,24 +14,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with Products.PythonScripts.  If not, see <http://www.gnu.org/licenses/>.
-##############################################################################
-#
-# Copyright (c) 2002 Zope Foundation and Contributors.
-#
-# This software is subject to the provisions of the Zope Public License,
-# Version 2.1 (ZPL).  A copy of the ZPL should accompany this distribution.
-# THIS SOFTWARE IS PROVIDED "AS IS" AND ANY AND ALL EXPRESS OR IMPLIED
-# WARRANTIES ARE DISCLAIMED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-# WARRANTIES OF TITLE, MERCHANTABILITY, AGAINST INFRINGEMENT, AND FITNESS
-# FOR A PARTICULAR PURPOSE
-#
-##############################################################################
-"""
-transformer module:
-
-uses Python standard library ast module and its containing classes to transform
-the parsed python code to create a modified AST for a byte code generation.
-"""
 
 
 import ast
@@ -39,6 +21,7 @@ import contextlib
 import textwrap
 
 from RestrictedPython._compat import IS_PY38_OR_GREATER
+from RestrictedPython.transformer import RestrictingNodeTransformer
 
 
 # For AugAssign the operator must be converted to a string.
@@ -121,7 +104,7 @@ class PrintInfo:
             self.printed_used = old_printed_used
 
 
-class UnrestrictedNodeTransformer(ast.NodeTransformer):
+class UnrestrictedNodeTransformer(RestrictingNodeTransformer):
 
     def __init__(self, errors=None, warnings=None, used_names=None):
         super().__init__()
@@ -493,6 +476,90 @@ class UnrestrictedNodeTransformer(ast.NodeTransformer):
         """Visit the contents of a node."""
         return super().generic_visit(node)
 
+    # ast for Literals
+
+    if IS_PY38_OR_GREATER:
+
+        def visit_Constant(self, node):
+            """Allow constant literals with restriction for Ellipsis.
+
+            Constant replaces Num, Str, Bytes, NameConstant and Ellipsis in
+            Python 3.8+.
+            :see: https://docs.python.org/dev/whatsnew/3.8.html#deprecated
+            """
+            if node.value is Ellipsis:
+                # Deny using `...`.
+                # Special handling necessary as ``self.not_allowed(node)``
+                # would return the Error Message:
+                # 'Constant statements are not allowed.'
+                # which is only partial true.
+                self.error(node, 'Ellipsis statements are not allowed.')
+                return
+            return self.node_contents_visit(node)
+
+    else:
+
+        def visit_Num(self, node):
+            """Allow integer numbers without restrictions.
+
+            Replaced by Constant in Python 3.8.
+            """
+            return self.node_contents_visit(node)
+
+        def visit_Str(self, node):
+            """Allow string literals without restrictions.
+
+            Replaced by Constant in Python 3.8.
+            """
+            return self.node_contents_visit(node)
+
+        def visit_Bytes(self, node):
+            """Allow bytes literals without restrictions.
+
+            Replaced by Constant in Python 3.8.
+            """
+            return self.node_contents_visit(node)
+
+        def visit_Ellipsis(self, node):
+            """Deny using `...`.
+
+            Replaced by Constant in Python 3.8.
+            """
+            return self.not_allowed(node)
+
+        def visit_NameConstant(self, node):
+            """Allow constant literals (True, False, None) without ...
+
+            restrictions.
+
+            Replaced by Constant in Python 3.8.
+            """
+            return self.node_contents_visit(node)
+
+    def visit_List(self, node):
+        """Allow list literals without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Tuple(self, node):
+        """Allow tuple literals without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Set(self, node):
+        """Allow set literals without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Dict(self, node):
+        """Allow dict literals without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_FormattedValue(self, node):
+        """Allow f-strings without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_JoinedStr(self, node):
+        """Allow joined string without restrictions."""
+        return self.node_contents_visit(node)
+
     # ast for Variables
 
     def visit_Name(self, node):
@@ -529,6 +596,180 @@ class UnrestrictedNodeTransformer(ast.NodeTransformer):
         self.check_name(node, node.id)
         return node
 
+    def visit_Load(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_Store(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_Del(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_Starred(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    # Expressions
+
+    def visit_Expression(self, node):
+        """Allow Expression statements without restrictions.
+
+        They are in the AST when using the `eval` compile mode.
+        """
+        return self.node_contents_visit(node)
+
+    def visit_Expr(self, node):
+        """Allow Expr statements (any expression) without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_UnaryOp(self, node):
+        """
+        UnaryOp (Unary Operations) is the overall element for:
+        * Not --> which should be allowed
+        * UAdd --> Positive notation of variables (e.g. +var)
+        * USub --> Negative notation of variables (e.g. -var)
+        """
+        return self.node_contents_visit(node)
+
+    def visit_UAdd(self, node):
+        """Allow positive notation of variables. (e.g. +var)"""
+        return self.node_contents_visit(node)
+
+    def visit_USub(self, node):
+        """Allow negative notation of variables. (e.g. -var)"""
+        return self.node_contents_visit(node)
+
+    def visit_Not(self, node):
+        """Allow the `not` operator."""
+        return self.node_contents_visit(node)
+
+    def visit_Invert(self, node):
+        """Allow `~` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_BinOp(self, node):
+        """Allow binary operations."""
+        return self.node_contents_visit(node)
+
+    def visit_Add(self, node):
+        """Allow `+` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_Sub(self, node):
+        """Allow `-` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_Mult(self, node):
+        """Allow `*` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_Div(self, node):
+        """Allow `/` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_FloorDiv(self, node):
+        """Allow `//` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_Mod(self, node):
+        """Allow `%` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_Pow(self, node):
+        """Allow `**` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_LShift(self, node):
+        """Allow `<<` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_RShift(self, node):
+        """Allow `>>` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_BitOr(self, node):
+        """Allow `|` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_BitXor(self, node):
+        """Allow `^` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_BitAnd(self, node):
+        """Allow `&` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_MatMult(self, node):
+        """Matrix multiplication (`@`) is currently not allowed."""
+        self.not_allowed(node)
+
+    def visit_BoolOp(self, node):
+        """Allow bool operator without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_And(self, node):
+        """Allow bool operator `and` without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Or(self, node):
+        """Allow bool operator `or` without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Compare(self, node):
+        """Allow comparison expressions without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Eq(self, node):
+        """Allow == expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_NotEq(self, node):
+        """Allow != expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_Lt(self, node):
+        """Allow < expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_LtE(self, node):
+        """Allow <= expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_Gt(self, node):
+        """Allow > expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_GtE(self, node):
+        """Allow >= expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_Is(self, node):
+        """Allow `is` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_IsNot(self, node):
+        """Allow `is not` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_In(self, node):
+        """Allow `in` expressions."""
+        return self.node_contents_visit(node)
+
+    def visit_NotIn(self, node):
+        """Allow `not in` expressions."""
+        return self.node_contents_visit(node)
+
     def visit_Call(self, node):
         """Checks calls with '*args' and '**kwargs'.
 
@@ -544,6 +785,13 @@ class UnrestrictedNodeTransformer(ast.NodeTransformer):
         From there, '_apply_()' wraps args and kws in guarded accessors,
         then calls the function, returning the value.
         """
+
+        if isinstance(node.func, ast.Name):
+            if node.func.id == 'exec':
+                self.error(node, 'Exec calls are not allowed.')
+            elif node.func.id == 'eval':
+                self.error(node, 'Eval calls are not allowed.')
+
         needs_wrap = False
 
         for pos_arg in node.args:
@@ -563,6 +811,16 @@ class UnrestrictedNodeTransformer(ast.NodeTransformer):
         node.func = ast.Name('_apply_', ast.Load())
         copy_locations(node.func, node.args[0])
         return node
+
+    def visit_keyword(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_IfExp(self, node):
+        """Allow `if` expressions without restrictions."""
+        return self.node_contents_visit(node)
 
     def visit_Attribute(self, node):
         """Checks and mutates attribute access/assignment.
@@ -658,6 +916,235 @@ class UnrestrictedNodeTransformer(ast.NodeTransformer):
             raise NotImplementedError(
                 f"Unknown ctx type: {type(node.ctx)}")
 
+    def visit_Index(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_Slice(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_ExtSlice(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    # Comprehensions
+
+    def visit_ListComp(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_SetComp(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_GeneratorExp(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_DictComp(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_comprehension(self, node):
+        """
+
+        """
+        return self.guard_iter(node)
+
+    # Statements
+
+    def visit_Assign(self, node):
+        """
+
+        """
+
+        node = self.node_contents_visit(node)
+
+        if not any(isinstance(t, ast.Tuple) for t in node.targets):
+            return node
+
+        # Handle sequence unpacking.
+        # For briefness this example omits cleanup of the temporary variables.
+        # Check 'transform_tuple_assign' how its done.
+        #
+        # - Single target (with nested support)
+        # (a, (b, (c, d))) = <exp>
+        # is converted to
+        # (a, t1) = _getiter_(<exp>)
+        # (b, t2) = _getiter_(t1)
+        # (c, d) = _getiter_(t2)
+        #
+        # - Multi targets
+        # (a, b) = (c, d) = <exp>
+        # is converted to
+        # (c, d) = _getiter_(<exp>)
+        # (a, b) = _getiter_(<exp>)
+        # Why is this valid ? The original bytecode for this multi targets
+        # behaves the same way.
+
+        # ast.NodeTransformer works with list results.
+        # He injects it at the right place of the node's parent statements.
+        new_nodes = []
+
+        # python fills the right most target first.
+        for target in reversed(node.targets):
+            if isinstance(target, ast.Tuple):
+                wrapper = ast.Assign(
+                    targets=[target],
+                    value=self.protect_unpack_sequence(target, node.value))
+                new_nodes.append(wrapper)
+            else:
+                new_node = ast.Assign(targets=[target], value=node.value)
+                new_nodes.append(new_node)
+
+        for new_node in new_nodes:
+            copy_locations(new_node, node)
+
+        return new_nodes
+
+    def visit_AugAssign(self, node):
+        """Forbid certain kinds of AugAssign
+
+        According to the language reference (and ast.c) the following nodes
+        are are possible:
+        Name, Attribute, Subscript
+
+        Note that although augmented assignment of attributes and
+        subscripts is disallowed, augmented assignment of names (such
+        as 'n += 1') is allowed.
+        'n += 1' becomes 'n = _inplacevar_("+=", n, 1)'
+        """
+
+        node = self.node_contents_visit(node)
+
+        if isinstance(node.target, ast.Attribute):
+            self.error(
+                node,
+                "Augmented assignment of attributes is not allowed.")
+            return node
+
+        elif isinstance(node.target, ast.Subscript):
+            self.error(
+                node,
+                "Augmented assignment of object items "
+                "and slices is not allowed.")
+            return node
+
+        elif isinstance(node.target, ast.Name):
+            return node
+        else:  # pragma: no cover
+            # Impossible Case - Only Node Types:
+            # * Name
+            # * Attribute
+            # * Subscript
+            # defined, those are checked before.
+            raise NotImplementedError(
+                f"Unknown target type: {type(node.target)}")
+
+    def visit_Raise(self, node):
+        """Allow `raise` statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Assert(self, node):
+        """Allow assert statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Delete(self, node):
+        """Allow `del` statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Pass(self, node):
+        """Allow `pass` statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    # Imports
+
+    def visit_Import(self, node):
+        """Allow `import` statements with restrictions.
+        See check_import_names."""
+        return self.node_contents_visit(node)
+
+    def visit_ImportFrom(self, node):
+        """Allow `import from` statements with restrictions.
+        See check_import_names."""
+        return self.node_contents_visit(node)
+
+    def visit_alias(self, node):
+        """Allow `as` statements in import and import from statements."""
+        return self.node_contents_visit(node)
+
+    # Control flow
+
+    def visit_If(self, node):
+        """Allow `if` statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_For(self, node):
+        """Allow `for` statements with some restrictions."""
+        return self.guard_iter(node)
+
+    def visit_While(self, node):
+        """Allow `while` statements."""
+        return self.node_contents_visit(node)
+
+    def visit_Break(self, node):
+        """Allow `break` statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Continue(self, node):
+        """Allow `continue` statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Try(self, node):
+        """Allow `try` without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_TryStar(self, node):
+        """Allow `ExceptionGroup` without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_ExceptHandler(self, node):
+        """Protect exception handlers."""
+        node = self.node_contents_visit(node)
+        self.check_name(node, node.name)
+        return node
+
+    def visit_With(self, node):
+        """Protect tuple unpacking on with statements."""
+        node = self.node_contents_visit(node)
+
+        for item in reversed(node.items):
+            if isinstance(item.optional_vars, ast.Tuple):
+                tmp_target, unpack = self.gen_unpack_wrapper(
+                    node,
+                    item.optional_vars)
+
+                item.optional_vars = tmp_target
+                node.body.insert(0, unpack)
+
+        return node
+
+    def visit_withitem(self, node):
+        """Allow `with` statements (context managers) without restrictions."""
+        return self.node_contents_visit(node)
+
+    # Function and class definitions
+
     def visit_FunctionDef(self, node):
         """Allow function definitions (`def`) with some restrictions."""
         self.check_name(node, node.name, allow_magic_methods=True)
@@ -672,6 +1159,38 @@ class UnrestrictedNodeTransformer(ast.NodeTransformer):
         """Allow lambda with some restrictions."""
         self.check_function_argument_names(node)
         return self.node_contents_visit(node)
+
+    def visit_arguments(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_arg(self, node):
+        """
+
+        """
+        return self.node_contents_visit(node)
+
+    def visit_Return(self, node):
+        """Allow `return` statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Yield(self, node):
+        """Allow `yield`statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_YieldFrom(self, node):
+        """Allow `yield`statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Global(self, node):
+        """Allow `global` statements without restrictions."""
+        return self.node_contents_visit(node)
+
+    def visit_Nonlocal(self, node):
+        """Deny `nonlocal` statements."""
+        self.not_allowed(node)
 
     def visit_ClassDef(self, node):
         """Check the name of a class definition."""
@@ -704,4 +1223,41 @@ class UnrestrictedNodeTransformer(ast.NodeTransformer):
                 break
 
         self.inject_print_collector(node, position)
+        return node
+
+    # Async und await
+
+    def visit_AsyncFunctionDef(self, node):
+        """Deny async functions."""
+        self.node_contents_visit(node)
+
+    def visit_Await(self, node):
+        """Deny async functionality."""
+        self.node_contents_visit(node)
+
+    def visit_AsyncFor(self, node):
+        """Deny async functionality."""
+        self.node_contents_visit(node)
+
+    def visit_AsyncWith(self, node):
+        """Deny async functionality."""
+        self.node_contents_visit(node)
+
+    # Assignment expressions (walrus operator ``:=``)
+    # New in 3.8
+    def visit_NamedExpr(self, node):
+        """Allow assignment expressions under some circumstances."""
+        # while the grammar requires ``node.target`` to be a ``Name``
+        # the abstract syntax is more permissive and allows an ``expr``.
+        # We support only a ``Name``.
+        # This is safe as the expression can only add/modify local
+        # variables. While this may hide global variables, an
+        # (implicitly performed) name check guarantees (as usual)
+        # that no essential global variable is hidden.
+        node = self.node_contents_visit(node)  # this checks ``node.target``
+        target = node.target
+        if not isinstance(target, ast.Name):
+            self.error(
+                node,
+                "Assignment expressions are only allowed for simple targets")
         return node
