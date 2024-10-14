@@ -22,6 +22,8 @@ import os
 import re
 import sys
 import types
+import hashlib
+import linecache
 from logging import getLogger
 from urllib.parse import quote
 
@@ -95,15 +97,6 @@ def manage_addPythonScript(self, id, title='', file=None, REQUEST=None,
             u = f'{u}/{quote(id)}'
         REQUEST.RESPONSE.redirect(u + '/manage_main')
     return ''
-
-
-class Loader:
-
-    def __init__(self, source):
-        self.source = source
-
-    def get_source(self, filename):
-        return self.source
 
 
 class PythonScript(Script, Historical, Cacheable):
@@ -283,8 +276,18 @@ class PythonScript(Script, Historical, Cacheable):
         #   (see https://bugs.launchpad.net/zope2/+bug/142731/comments/4)
         # - with Python 2.6 it should not be None
         #   (see testPythonScript.TestPythonScriptGlobals.test_filepath)
-        safe_globals['__name__'] = 'script'
-        safe_globals['__loader__'] = Loader(code)
+        # - for PEP302 Loader this should be a unique name across all
+        #   PythonScripts to allow linecache to store the correct source
+        fullname = hashlib.md5(
+            self.get_filepath().encode()).hexdigest()
+
+        safe_globals['__name__'] = fullname
+        linecache.cache['fullname'] = (
+            len(self._body),
+            None,
+            [line + '\n' for line in self._body.splitlines()],
+            fullname
+        )
 
         safe_locals = {}
         exec(code, safe_globals, safe_locals)
