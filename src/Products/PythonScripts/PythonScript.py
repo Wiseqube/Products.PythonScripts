@@ -282,7 +282,7 @@ class PythonScript(Script, Historical, Cacheable):
             self.get_filepath().encode()).hexdigest()
 
         safe_globals['__name__'] = fullname
-        linecache.cache['fullname'] = (
+        linecache.cache[fullname] = (
             len(self._body),
             None,
             [line + '\n' for line in self._body.splitlines()],
