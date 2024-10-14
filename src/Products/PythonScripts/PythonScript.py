@@ -97,6 +97,15 @@ def manage_addPythonScript(self, id, title='', file=None, REQUEST=None,
     return ''
 
 
+class Loader:
+
+    def __init__(self, source):
+        self.source = source
+
+    def get_source(self, filename):
+        return self.source
+
+
 class PythonScript(Script, Historical, Cacheable):
     """Web-callable scripts written in a safe subset of Python.
 
@@ -234,7 +243,7 @@ class PythonScript(Script, Historical, Cacheable):
             self._params,
             body=self._body or 'pass',
             name=self.id,
-            filename=self.meta_type,
+            filename=self.get_filepath(),
             globalize=bind_names)
 
         code = compile_result.code
@@ -275,6 +284,7 @@ class PythonScript(Script, Historical, Cacheable):
         # - with Python 2.6 it should not be None
         #   (see testPythonScript.TestPythonScriptGlobals.test_filepath)
         safe_globals['__name__'] = 'script'
+        safe_globals['__loader__'] = Loader(code)
 
         safe_locals = {}
         exec(code, safe_globals, safe_locals)
