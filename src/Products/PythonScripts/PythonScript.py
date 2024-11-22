@@ -42,6 +42,8 @@ from OFS.History import Historical
 from OFS.History import html_diff
 from OFS.SimpleItem import SimpleItem
 from RestrictedPython import compile_restricted_function
+from RestrictedPython.transformer import RestrictingNodeTransformer
+from .transformer import UnrestrictedNodeTransformer
 from Shared.DC.Scripts.Script import BindingsUI
 from Shared.DC.Scripts.Script import Script
 from Shared.DC.Scripts.Script import defaultBindings
@@ -69,7 +71,7 @@ _marker = []  # Create a new marker object
 
 
 def manage_addPythonScript(self, id, title='', file=None, REQUEST=None,
-                           submit=None):
+                           submit=None, unrestricted=None):
     """Add a Python script to a folder.
     """
     id = str(id)
@@ -130,6 +132,7 @@ class PythonScript(Script, Historical, Cacheable):
                 '%s.'
                 'Please choose another name.' % ', '.join(bind_names))
         self.id = id
+        self._unrestricted = None
         self._makeFunction()
 
     security = ClassSecurityInfo()
@@ -146,10 +149,11 @@ class PythonScript(Script, Historical, Cacheable):
     ZPythonScriptHTML_editForm._setName('ZPythonScriptHTML_editForm')
 
     @security.protected(change_python_scripts)
-    def ZPythonScriptHTML_editAction(self, REQUEST, title, params, body):
+    def ZPythonScriptHTML_editAction(
+            self, REQUEST, title, params, body, unrestricted=False):
         """Change the script's main parameters."""
         self.ZPythonScript_setTitle(title)
-        self.ZPythonScript_edit(params, body)
+        self.ZPythonScript_edit(params, body, unrestricted)
         message = 'Saved changes.'
         return self.ZPythonScriptHTML_editForm(self, REQUEST,
                                                manage_tabs_message=message)
@@ -162,14 +166,22 @@ class PythonScript(Script, Historical, Cacheable):
             self.ZCacheable_invalidate()
 
     @security.protected(change_python_scripts)
-    def ZPythonScript_edit(self, params, body):
+    def ZPythonScript_edit(self, params, body, unrestricted=False):
         self._validateProxy()
         if self.wl_isLocked():
             raise ResourceLockedError('The script is locked via WebDAV.')
         if not isinstance(body, str):
             body = body.read()
 
-        if self._params != params or self._body != body or self._v_change:
+        changed = any([
+            self._params != params,
+            self._body != body,
+            getattr(self, '_unrestricted', False) != unrestricted,
+            self._v_change]
+        )
+
+        if changed:
+            self._unrestricted = unrestricted
             self._params = str(params)
             self.write(body)
 
@@ -230,12 +242,18 @@ class PythonScript(Script, Historical, Cacheable):
 
     def _compile(self):
         bind_names = self.getBindingAssignments().getAssignedNamesInOrder()
+        policy = RestrictingNodeTransformer
+        if getattr(self, '_unrestricted', False):
+            policy = UnrestrictedNodeTransformer
+
         compile_result = compile_restricted_function(
             self._params,
             body=self._body or 'pass',
             name=self.id,
             filename=self.meta_type,
-            globalize=bind_names)
+            globalize=bind_names,
+            policy=policy,
+        )
 
         code = compile_result.code
         errors = compile_result.errors
@@ -263,8 +281,31 @@ class PythonScript(Script, Historical, Cacheable):
         self.Script_magic = Script_magic
         self._v_change = 0
 
-    def _newfun(self, code):
+    def _get_globals(self):
         safe_globals = get_safe_globals()
+        if not getattr(self, '_unrestricted', False):
+            return safe_globals
+        new_globals = globals()
+        required_globals = [
+            '_print_',
+            '_write_',
+            '_getitem_',
+            '_getiter_',
+            '_apply_',
+            '_inplacevar_',
+        ]
+        for key in required_globals:
+            new_globals[key] = safe_globals[key]
+        required_builtins = [
+            'DateTime'
+        ]
+        for key in required_builtins:
+            new_globals['__builtins__'][key] = safe_globals['__builtins__'][key]
+
+        return new_globals
+
+    def _newfun(self, code):
+        safe_globals = self._get_globals()
         safe_globals['_getattr_'] = guarded_getattr
         safe_globals['__debug__'] = __debug__
         # it doesn't really matter what __name__ is, *but*
@@ -487,6 +528,7 @@ class PythonScript(Script, Historical, Cacheable):
         m = {
             'title': self.title,
             'parameters': self._params,
+            'unrestricted': self.unrestricted,
         }
         bindmap = self.getBindingAssignments().getAssignedNames()
         for k, v in _nice_bind_names.items():
@@ -532,6 +574,10 @@ class PythonScript(Script, Historical, Cacheable):
     def body(self):
         return self._body
 
+    @security.protected(view_management_screens)
+    def unrestricted(self):
+        return getattr(self, '_unrestricted', False)
+
     def get_size(self):
         return len(self.read())
 
@@ -556,6 +602,7 @@ InitializeClass(PythonScript)
 
 class PythonScriptTracebackSupplement:
     """Implementation of ITracebackSupplement"""
+
     def __init__(self, script, line=0):
         self.object = script
         # If line is set to -1, it means to use tb_lineno.
